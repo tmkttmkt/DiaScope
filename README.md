@@ -2,6 +2,8 @@
   <img src="./paiagram.svg">
 </div>
 
+# Development is on another branch! This project is not dead!
+
 # Paiagram
 
 [![Workflow Status](https://github.com/WenSimEHRP/Paiagram/actions/workflows/nightly.yml/badge.svg)](https://github.com/WenSimEHRP/Paiagram/actions/workflows/nightly.yml)
