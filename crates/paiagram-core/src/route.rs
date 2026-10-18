@@ -6,13 +6,16 @@ use pathfinding::prelude::dijkstra;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
+mod prep_diagram;
 mod prep_segments;
 
+pub use prep_diagram::{RouteTimetable, RouteTimetableEntry, RouteTimetableExport};
+
 use crate::graph::Graph;
-use crate::trip::{EstimateEntry, TEstimate};
+use crate::trip::{EstimateEntry, TEstimate, TripSchedule};
 use crate::{
-    CanvasLength, Distance, NodeKey, NodeKeyHashMap, StationCollection, StationKey, TripKey,
-    TripKeyHashMap, WorldSnapshot,
+    CanvasLength, Distance, NodeCollection, NodeKey, NodeKeyHashMap, StationCollection, StationKey,
+    TripKey, TripKeyHashMap, WorldSnapshot,
 };
 
 /// What to account as a part of the station
@@ -31,6 +34,14 @@ impl StationRecord {
                 stations.get(&station_key).map_or_default(|wfc| wfc.cache.nodes.as_slice())
             }
             StationRecord::Some(ref nodes) => nodes.as_slice(),
+        }
+    }
+    fn station_key<'a>(&'a self, node_collection: &'a NodeCollection) -> Option<&'a StationKey> {
+        match self {
+            StationRecord::All(station_key) => Some(station_key),
+            StationRecord::Some(nodes) => {
+                nodes.first().and_then(|key| node_collection.get(key)).map(|wfc| &wfc.parent)
+            }
         }
     }
 }
@@ -102,11 +113,14 @@ fn gen_progress(
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct RouteIntervals(pub Vec<RouteInterval>);
+pub struct RouteIntervals(pub EcoVec<RouteInterval>);
+
+pub type BucketPoint = (TEstimate, EstimateEntry, u32, f32);
+pub type TripBucket = SmallVec<[Vec<BucketPoint>; 1]>;
 
 #[derive(Clone, Default, Debug, Serialize)]
 pub struct DiagramCache {
-    pub map: TripKeyHashMap<SmallVec<[Vec<(TEstimate, EstimateEntry, u32, f32)>; 1]>>,
+    pub map: TripKeyHashMap<TripBucket>,
 }
 
 impl RouteIntervals {
@@ -119,7 +133,8 @@ impl RouteIntervals {
             curr.progresses(snap, next_stn_nodes)
         })
     }
-    pub fn populate_trips(&self, snap: &WorldSnapshot, cache: &mut DiagramCache) {
+
+    fn prepare_lookup(&self, snap: &WorldSnapshot) -> NodeKeyHashMap<Vec<(u32, f32)>> {
         // Where each graph node sits on the diagram: every `(line index, progress)` placement.
         let mut node_lookup: NodeKeyHashMap<Vec<(u32, f32)>> = NodeKeyHashMap::default();
         for (key, progress) in self.progresses(snap).enumerate().flat_map(|(idx, it)| {
@@ -136,9 +151,10 @@ impl RouteIntervals {
                 }
             }
         }
-        // The same trip is reachable through several route nodes/intervals, so collect and
-        // deduplicate the trip keys first; otherwise every segment would be pushed once per
-        // discovery.
+        node_lookup
+    }
+
+    pub fn get_passing_trips(&self, snap: &WorldSnapshot) -> Vec<TripKey> {
         let mut trip_keys: Vec<TripKey> = self
             .0
             .iter()
@@ -154,8 +170,48 @@ impl RouteIntervals {
             .collect();
         trip_keys.sort_unstable();
         trip_keys.dedup();
+        trip_keys
+    }
+
+    /// Populates trips into a diagram cache
+    pub fn populate_trips(&self, snap: &WorldSnapshot, cache: &mut DiagramCache) {
+        let node_lookup = self.prepare_lookup(snap);
+        let trip_keys = self.get_passing_trips(snap);
 
         cache.map.clear();
-        prep_segments::calc(cache, trip_keys.into_iter(), snap, &node_lookup);
+        for trip_key in &trip_keys {
+            let Some(trip) = snap.trips.get(trip_key) else {
+                continue;
+            };
+            prep_segments::prep_single_segment(
+                &trip.schedule,
+                cache.map.entry(*trip_key).or_default(),
+                &snap.graph,
+                |entry| node_lookup.get(&entry.node_key()).map_or(&[], Vec::as_slice),
+            )
+        }
+    }
+
+    /// Populates a single schedule into the diagram cache
+    pub fn populate_schedule(
+        &self,
+        snap: &WorldSnapshot,
+        schedule: &TripSchedule,
+    ) -> Option<TripBucket> {
+        let node_lookup = self.prepare_lookup(snap);
+        let mut bucket = TripBucket::new();
+        prep_segments::prep_single_segment(schedule, &mut bucket, &snap.graph, |entry| {
+            node_lookup.get(&entry.node_key()).map_or(&[], Vec::as_slice)
+        });
+        Some(bucket)
+    }
+
+    pub fn populate_route_timetable(&self, snap: &WorldSnapshot) -> RouteTimetable {
+        let mut diagram_cache = DiagramCache::default();
+        self.populate_trips(snap, &mut diagram_cache);
+        RouteTimetable::new(
+            diagram_cache,
+            self.0.iter().map(|entry| &entry.station_record),
+        )
     }
 }

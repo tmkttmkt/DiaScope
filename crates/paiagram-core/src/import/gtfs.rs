@@ -152,7 +152,7 @@ pub(super) fn parse_gtfs(data: &[u8]) -> Result<WorldSnapshot, Box<dyn std::erro
                     nodes: EcoVec::new(),
                 })
             })
-            .collect::<Vec<_>>();
+            .collect::<EcoVec<_>>();
         let name = route
             .short_name
             .clone()

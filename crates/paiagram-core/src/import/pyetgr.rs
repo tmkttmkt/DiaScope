@@ -161,7 +161,7 @@ pub(super) fn parse_pyetgr(data: &[u8]) -> Option<WorldSnapshot> {
         );
     }
     for line in [&root.line].into_iter().chain(root.lines.iter()) {
-        let mut route_intervals = Vec::with_capacity(line.stations.len());
+        let mut route_intervals = EcoVec::with_capacity(line.stations.len());
         for station in &line.stations {
             if station_node_map.contains_key(&*station.name) {
                 continue;

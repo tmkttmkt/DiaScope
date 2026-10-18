@@ -221,7 +221,9 @@ pub(crate) trait Tab {
     /// e.g. the localization or other contents.
     const NAME: &'static str;
     /// The title of the tab
-    fn title(&self) -> WidgetText;
+    fn title(&self) -> WidgetText {
+        Self::NAME.into()
+    }
     /// The main display of the tab.
     fn main_display(&mut self, app: &mut App, ui: &mut Ui);
 }

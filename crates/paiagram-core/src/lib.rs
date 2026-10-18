@@ -80,7 +80,7 @@ impl<D, C> WorldFieldContainer<D, C> {
     }
 }
 
-type Wfc<D, C> = WorldFieldContainer<D, C>;
+pub type Wfc<D, C> = WorldFieldContainer<D, C>;
 
 make_type! {
     Trip,
@@ -180,6 +180,15 @@ make_type! {
 pub struct StrokeStyle {
     pub color: Color32,
     pub width: u8,
+}
+
+impl Default for StrokeStyle {
+    fn default() -> Self {
+        Self {
+            color: Color32::GRAY,
+            width: 1,
+        }
+    }
 }
 
 fn default_true() -> bool {

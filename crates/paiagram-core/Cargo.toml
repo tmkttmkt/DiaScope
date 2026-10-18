@@ -15,6 +15,7 @@ categories.workspace = true
 arc-swap.workspace = true
 bitflags.workspace = true
 cbor4ii.workspace = true
+csv.workspace = true
 derive_more = { version = "2.1.0", features = ["full"] }
 ecow.workspace = true
 egui.workspace = true

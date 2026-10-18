@@ -229,11 +229,18 @@ impl<'w> Behavior<MainTab> for MainTabViewer<'w> {
                     )));
                 }
                 for (route_key, info) in &self.app.snap.routes {
-                    if ui.button(info.name.as_str()).clicked() {
-                        ui_action_queue.push(UiCommand::OpenOrFocus(MainTab::Diagram(
-                            DiagramTab::new(*route_key),
-                        )));
-                    }
+                    ui.menu_button(info.name.as_str(), |ui| {
+                        if ui.button("Graph").clicked() {
+                            ui_action_queue.push(UiCommand::OpenOrFocus(MainTab::Diagram(
+                                DiagramTab::new(*route_key),
+                            )));
+                        }
+                        if ui.button("Route Timetable").clicked() {
+                            ui_action_queue.push(UiCommand::OpenOrFocus(MainTab::RouteTimetable(
+                                RouteTimetableTab::new(*route_key),
+                            )));
+                        }
+                    });
                 }
             })
         });

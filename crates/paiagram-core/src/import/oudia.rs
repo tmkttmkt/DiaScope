@@ -33,7 +33,7 @@ pub(crate) fn parse_oudia(
     let route = root.route;
     let graph = route.stations.to_graph();
     let stations_on_route = route.stations.merge_duplicate();
-    let mut route_intervals = Vec::with_capacity(stations_on_route.len());
+    let mut route_intervals = EcoVec::with_capacity(stations_on_route.len());
     let mut stn_to_node_key: HashMap<*const OudStation, (NodeKey, StationKey), _> =
         HashMap::with_capacity_and_hasher(graph.node_count(), FxBuildHasher);
     for station in stations_on_route {
