@@ -195,11 +195,42 @@ fn show_trip_header(
             |ui, rect, _row_range, col_range| {
                 for (col_idx, (key, _)) in cache.inbound_trips[col_range].iter().enumerate() {
                     let name = app.snap.trips.get(key).map_or_default(|wfc| wfc.name.as_str());
+                    let fill = app
+                        .snap
+                        .trips
+                        .get(key)
+                        .and_then(|wfc| wfc.service_class)
+                        .and_then(|class_key| app.snap.service_classes.get(&class_key))
+                        .map(|wfc| wfc.style.color)
+                        .unwrap_or(ui.visuals().faint_bg_color);
                     let cell_rect = Rect::from_min_size(
                         pos2(rect.left() + col_idx as f32 * cell_size.x, rect.top()),
                         cell_size,
                     );
-                    ui.place(cell_rect, Button::new(name).truncate());
+                    ui.visuals_mut().widgets.inactive.corner_radius = 0.into();
+                    ui.visuals_mut().widgets.hovered.corner_radius = 0.into();
+                    ui.visuals_mut().widgets.active.corner_radius = 0.into();
+                    ui.visuals_mut().widgets.inactive.weak_bg_fill = fill;
+                    ui.visuals_mut().widgets.hovered.weak_bg_fill = fill.gamma_multiply(0.5);
+                    ui.visuals_mut().widgets.active.weak_bg_fill = fill.gamma_multiply(0.25);
+                    // ui.visuals_mut().widgets.inactive.bg_stroke;
+                    ui.visuals_mut().widgets.hovered.bg_stroke = Stroke {
+                        width: 1.0,
+                        color: fill,
+                    };
+                    ui.visuals_mut().widgets.active.bg_stroke = Stroke {
+                        width: 1.0,
+                        color: fill.gamma_multiply(0.5),
+                    };
+                    ui.place(
+                        cell_rect,
+                        Button::new(RichText::new(name).color(if fill.intensity() > 0.5 {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        }))
+                        .truncate(),
+                    );
                 }
             },
         )
@@ -258,7 +289,9 @@ fn show_grid(
                     let y = rect.top() + (idx + 1) as f32 * cell_size.y;
                     ui.painter().hline(rect.x_range(), y, stroke);
                 }
-                for (col_idx, (_, section)) in cache.inbound_trips[col_range].iter().enumerate() {
+                for (col_idx, (trip_key, section)) in
+                    cache.inbound_trips[col_range].iter().enumerate()
+                {
                     let left = rect.left() + col_idx as f32 * cell_size.x;
                     let entry_iter = izip!(
                         &cache.station_records,

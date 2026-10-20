@@ -182,6 +182,12 @@ pub struct StrokeStyle {
     pub width: u8,
 }
 
+impl StrokeStyle {
+    pub fn to_egui_stroke(self) -> egui::Stroke {
+        egui::Stroke::new(self.width as f32, self.color)
+    }
+}
+
 impl Default for StrokeStyle {
     fn default() -> Self {
         Self {
