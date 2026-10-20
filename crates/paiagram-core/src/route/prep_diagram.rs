@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::iter;
 
 use csv::Writer;
 use ecow::{EcoVec, eco_vec};
@@ -10,7 +11,6 @@ use crate::{TripKey, WorldSnapshot};
 
 #[derive(Clone, Copy)]
 pub enum RouteTimetableEntry {
-    Skip,
     NotInOperation,
     Active((TEstimate, EstimateEntry)),
 }
@@ -18,7 +18,6 @@ pub enum RouteTimetableEntry {
 impl std::fmt::Display for RouteTimetableEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Skip => write!(f, "||"),
             Self::NotInOperation => write!(f, ".."),
             Self::Active((estimate, _)) => write!(f, "{}", estimate.arr),
         }
@@ -49,16 +48,25 @@ pub struct RouteTimetable {
     pub outbound_trips: EcoVec<(TripKey, EcoVec<RouteTimetableEntry>)>,
 }
 
-fn sign_of_diff(a: u32, b: u32) -> i8 {
-    use std::cmp::Ordering;
-    match b.cmp(&a) {
-        // b is greater than a, inbound
-        Ordering::Greater => 1,
-        // b is smaller than a, outbound
-        Ordering::Less => -1,
-        // same. Can't tell if inbound or outbound
-        Ordering::Equal => 0,
+fn merge_candidates(
+    mut old: EcoVec<RouteTimetableEntry>,
+    range: std::ops::Range<usize>,
+    new_items: impl Iterator<Item = RouteTimetableEntry> + Clone,
+) -> Option<EcoVec<RouteTimetableEntry>> {
+    old.extend(iter::repeat_n(
+        RouteTimetableEntry::NotInOperation,
+        range.end.saturating_sub(old.len()),
+    ));
+    for (old_ref, new_item) in iter::zip(
+        old.make_mut().iter_mut().skip(range.start).take(range.clone().count()),
+        new_items.clone(),
+    ) {
+        if !matches!(old_ref, RouteTimetableEntry::NotInOperation) {
+            return None;
+        }
+        *old_ref = new_item;
     }
+    Some(old)
 }
 
 impl RouteTimetable {
@@ -66,60 +74,46 @@ impl RouteTimetable {
         diagram_cache: DiagramCache,
         station_records: impl Iterator<Item = &'a StationRecord>,
     ) -> Self {
+        let station_records: EcoVec<_> =
+            station_records.map(|record| (record.clone(), StationDisplayMode::DEPARTURE)).collect();
         let (inbound_trips, outbound_trips) = diagram_cache.map.into_iter().fold(
-            (EcoVec::new(), EcoVec::new()),
+            (
+                EcoVec::<(TripKey, EcoVec<RouteTimetableEntry>)>::new(),
+                EcoVec::<(TripKey, EcoVec<RouteTimetableEntry>)>::new(),
+            ),
             |(mut inbound_trips, mut outbound_trips), (trip_key, segments)| {
-                for segment in segments.iter().flat_map(|segment| {
-                    let mut current_sign = 0i8;
-                    segment.chunk_by(move |a, b| {
-                        let new_sign = sign_of_diff(a.2, b.2);
-                        if new_sign == 0 {
-                            true // Treat flat points as part of the same chunk
-                        } else if current_sign == 0 || current_sign == new_sign {
-                            current_sign = new_sign;
-                            true
-                        } else {
-                            current_sign = new_sign;
-                            false // Break chunk on direction change
-                        }
-                    })
-                }) {
-                    // check the direction
-                    let (Some(first), Some(last)) = (segment.first(), segment.last()) else {
-                        continue;
-                    };
-                    let direction = sign_of_diff(first.2, last.2);
-                    // same or inbound
-                    if direction >= 0 {
-                        let mut entries =
-                            eco_vec![RouteTimetableEntry::NotInOperation; first.2 as usize];
-                        entries.extend(
-                            segment
-                                .iter()
-                                .map(|entry| RouteTimetableEntry::Active((entry.0, entry.1))),
-                        );
-                        inbound_trips.push((trip_key, entries))
-                    }
-                    // same or outbound
-                    if direction <= 0 {
-                        let mut entries =
-                            eco_vec![RouteTimetableEntry::NotInOperation; last.2 as usize];
-                        entries.extend(
-                            segment
-                                .iter()
-                                .rev()
-                                .map(|entry| RouteTimetableEntry::Active((entry.0, entry.1))),
-                        );
-                        outbound_trips.push((trip_key, entries))
+                for inbound_segment in segments
+                    .iter()
+                    .flat_map(|segment| segment.chunk_by(|prev, curr| prev.2 < curr.2))
+                    .filter(|segment| segment.len() >= 2)
+                {
+                    let &(.., start_idx, _) = inbound_segment.first().unwrap();
+                    let inbound_entries = inbound_segment
+                        .iter()
+                        .map(|&(es, entry, ..)| RouteTimetableEntry::Active((es, entry)));
+
+                    if let Some((prev_key, prev_segment)) = inbound_trips.make_mut().last_mut()
+                        && *prev_key == trip_key
+                        && let Some(merged) = merge_candidates(
+                            prev_segment.clone(),
+                            (start_idx as usize)..(start_idx as usize + inbound_segment.len()),
+                            inbound_entries.clone(),
+                        )
+                    {
+                        *prev_segment = merged;
+                    } else {
+                        let mut col =
+                            eco_vec![RouteTimetableEntry::NotInOperation; start_idx as usize];
+
+                        col.extend(inbound_entries);
+                        inbound_trips.push((trip_key, col));
                     }
                 }
                 (inbound_trips, outbound_trips)
             },
         );
         Self {
-            station_records: station_records
-                .map(|record| (record.clone(), StationDisplayMode::DEPARTURE))
-                .collect(),
+            station_records,
             inbound_trips,
             outbound_trips,
         }
@@ -156,7 +150,6 @@ impl RouteTimetable {
                 entry_fmt_buf.clear();
                 if stn_display.contains(StationDisplayMode::ARRIVAL) {
                     match entry {
-                        RouteTimetableEntry::Skip => write!(entry_fmt_buf, "arr:||")?,
                         RouteTimetableEntry::NotInOperation => write!(entry_fmt_buf, "arr:..")?,
                         RouteTimetableEntry::Active((estimate, _)) => {
                             write!(entry_fmt_buf, "arr:{}", estimate.arr)?
@@ -168,7 +161,6 @@ impl RouteTimetable {
                 }
                 if stn_display.contains(StationDisplayMode::DEPARTURE) {
                     match entry {
-                        RouteTimetableEntry::Skip => write!(entry_fmt_buf, "dep:||")?,
                         RouteTimetableEntry::NotInOperation => write!(entry_fmt_buf, "dep:..")?,
                         RouteTimetableEntry::Active((estimate, _)) => {
                             write!(entry_fmt_buf, "dep:{}", estimate.dep)?

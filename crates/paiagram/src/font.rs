@@ -35,7 +35,7 @@ pub(crate) fn load_default_font(ctx: Context, font_name: Arc<Mutex<String>>) {
         .families
         .entry(FontFamily::Name("timetable font".into()))
         .or_default()
-        .insert(0, "XF_Nstf".into());
+        .insert(0, "Paiagram-Timetable-Font".into());
     ctx.all_styles_mut(|s| {
         s.text_styles.insert(TIMETABLTE_TEXT_STYLE.clone(), {
             let mut default = FontId::default();
@@ -45,12 +45,12 @@ pub(crate) fn load_default_font(ctx: Context, font_name: Arc<Mutex<String>>) {
         });
     });
     definitions.font_data.insert(
-        "XF_Nstf".into(),
+        "Paiagram-Timetable-Font".into(),
         Arc::new(egui::FontData::from_static(include_bytes!(
-            "../assets/fonts/XF_Nstf.otf"
+            "../assets/fonts/Paiagram-Timetable-Font.ttf"
         ))),
     );
-    info!("Loaded XF_Nstf");
+    info!("Loaded Paiagram-Timetable-Font");
     ctx.set_fonts(definitions.clone());
     // egui_material_icons::initialize(&ctx);
     // dynamic query

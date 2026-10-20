@@ -21,6 +21,7 @@ pub(crate) struct RouteTimetableTab {
     route_key: RouteKey,
     #[serde(skip)]
     cache: RouteTimetable,
+    show_estimates: bool,
 }
 
 impl PartialEq for RouteTimetableTab {
@@ -35,6 +36,7 @@ impl RouteTimetableTab {
             scroll: Vec2::ZERO,
             route_key,
             cache: RouteTimetable::default(),
+            show_estimates: false,
         }
     }
 }
@@ -55,6 +57,7 @@ impl super::Tab for RouteTimetableTab {
                 RouteTimetableExport(self.cache.clone(), app.snap.clone())
                     .write_to_file::<false>(Default::default());
             }
+            ui.checkbox(&mut self.show_estimates, "Show estimates");
         });
 
         let cell_size: Vec2 = vec2(50.0, 20.0);
@@ -83,6 +86,7 @@ impl super::Tab for RouteTimetableTab {
             &mut self.scroll,
         );
         show_grid(
+            self.show_estimates,
             app,
             ui,
             cell_size,
@@ -240,6 +244,7 @@ fn show_trip_header(
 
 /// Center panel: the timetable grid itself.
 fn show_grid(
+    show_estimates: bool,
     app: &crate::App,
     ui: &mut Ui,
     cell_size: Vec2,
@@ -289,56 +294,61 @@ fn show_grid(
                     let y = rect.top() + (idx + 1) as f32 * cell_size.y;
                     ui.painter().hline(rect.x_range(), y, stroke);
                 }
-                for (col_idx, (trip_key, section)) in
-                    cache.inbound_trips[col_range].iter().enumerate()
-                {
+                for (col_idx, (_, section)) in cache.inbound_trips[col_range].iter().enumerate() {
                     let left = rect.left() + col_idx as f32 * cell_size.x;
                     let entry_iter = izip!(
                         &cache.station_records,
                         chain!(
-                            section.iter().map(Either::Left),
+                            section.iter().copied().map(Either::Left),
                             iter::once(Either::Right(())),
-                            iter::repeat(Either::Left(&RouteTimetableEntry::NotInOperation)),
+                            iter::repeat(Either::Left(RouteTimetableEntry::NotInOperation)),
                         ),
                     )
                     .flat_map(|((_, display_mode), entry)| {
-                        let mut end_mark_displayed = false;
-                        display_mode.iter().map(move |disp_mode| {
-                            if disp_mode == StationDisplayMode::TRACK
-                                && let Either::Left(RouteTimetableEntry::Active((_, entry))) = entry
-                            {
-                                let track_name = app
-                                    .snap
-                                    .graph
-                                    .nodes()
-                                    .get(&entry.node_key())
-                                    .map_or("?".into(), |wfc| wfc.name.as_str());
-                                Atom::from(track_name).atom_shrink(true)
-                            } else {
-                                let text_to_display = match entry {
-                                    Either::Left(RouteTimetableEntry::Skip) => "||".into(),
-                                    Either::Left(RouteTimetableEntry::Active((es, _))) => {
-                                        if disp_mode == StationDisplayMode::ARRIVAL {
-                                            es.arr.to_oud2_string(false)
-                                        } else {
-                                            es.dep.to_oud2_string(false)
-                                        }
+                        display_mode.iter().map(move |disp_mode| (disp_mode, entry))
+                    })
+                    .scan(None, |display_progress, (disp_mode, entry)| {
+                        let ret = if disp_mode == StationDisplayMode::TRACK
+                            && let Either::Left(RouteTimetableEntry::Active((_, entry))) = entry
+                        {
+                            let track_name = app
+                                .snap
+                                .graph
+                                .nodes()
+                                .get(&entry.node_key())
+                                .map_or("?".into(), |wfc| wfc.name.as_str());
+                            Atom::from(track_name).atom_shrink(true)
+                        } else {
+                            let text_to_display = match entry {
+                                Either::Left(RouteTimetableEntry::Active((es, entry))) => {
+                                    *display_progress = Some(true);
+                                    match [show_estimates, disp_mode == StationDisplayMode::ARRIVAL]
+                                    {
+                                        [true, true] => es.arr.to_oud2_string(false),
+                                        [true, false] => es.dep.to_oud2_string(false),
+                                        [false, true] => entry.to_oud2_string_arr(false),
+                                        [false, false] => entry.to_oud2_string_dep(false),
                                     }
-                                    Either::Right(()) if !end_mark_displayed => {
-                                        end_mark_displayed = true;
-                                        "=====".into()
-                                    }
-                                    Either::Left(RouteTimetableEntry::NotInOperation) | _ => {
+                                }
+                                Either::Right(()) if *display_progress == Some(true) => {
+                                    *display_progress = Some(false);
+                                    "=====".into()
+                                }
+                                Either::Left(RouteTimetableEntry::NotInOperation) | _ => {
+                                    if *display_progress == Some(true) {
+                                        "||".into()
+                                    } else {
                                         "..".into()
                                     }
-                                };
-                                Atom::from(
-                                    WidgetText::Text(text_to_display)
-                                        .text_style(TIMETABLTE_TEXT_STYLE.clone()),
-                                )
-                                .atom_align(Align2::RIGHT_CENTER)
-                            }
-                        })
+                                }
+                            };
+                            Atom::from(
+                                WidgetText::Text(text_to_display)
+                                    .text_style(TIMETABLTE_TEXT_STYLE.clone()),
+                            )
+                            .atom_align(Align2::RIGHT_CENTER)
+                        };
+                        Some(ret)
                     })
                     .skip(row_range.start)
                     .take(row_range.clone().count());

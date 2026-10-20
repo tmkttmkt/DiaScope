@@ -26,6 +26,13 @@ impl TravelMode {
             Self::Flexible => Self::Flexible,
         }
     }
+    pub fn to_oud2_string(self, show_seconds: bool) -> String {
+        match self {
+            Self::At(t) => t.to_oud2_string(show_seconds),
+            Self::For(d) => "temp".to_string(),
+            Self::Flexible => "O".into(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
@@ -124,6 +131,18 @@ impl EstimateEntry {
         match self {
             Self::Pinned(entry) => entry.node,
             Self::Derived(node) => *node,
+        }
+    }
+    pub fn to_oud2_string_arr(self, show_seconds: bool) -> String {
+        match self {
+            Self::Pinned(entry) => entry.arr_or_pass.to_oud2_string(show_seconds),
+            Self::Derived(_) => "⇂".into(),
+        }
+    }
+    pub fn to_oud2_string_dep(self, show_seconds: bool) -> String {
+        match self {
+            Self::Pinned(entry) if let Some(dep) = entry.dep => dep.to_oud2_string(show_seconds),
+            _ => "⇂".into(),
         }
     }
 }
