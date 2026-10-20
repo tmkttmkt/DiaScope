@@ -26,11 +26,11 @@ impl std::fmt::Display for RouteTimetableEntry {
 }
 
 bitflags::bitflags! {
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq)]
     pub struct StationDisplayMode: u8 {
         const ARRIVAL   = 1 << 0;
-        const DEPARTURE = 1 << 1;
-        const TRACKS    = 1 << 3;
+        const TRACK     = 1 << 1;
+        const DEPARTURE = 1 << 2;
     }
 }
 

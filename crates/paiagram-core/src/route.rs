@@ -9,7 +9,9 @@ use smallvec::SmallVec;
 mod prep_diagram;
 mod prep_segments;
 
-pub use prep_diagram::{RouteTimetable, RouteTimetableEntry, RouteTimetableExport};
+pub use prep_diagram::{
+    RouteTimetable, RouteTimetableEntry, RouteTimetableExport, StationDisplayMode,
+};
 
 use crate::graph::Graph;
 use crate::trip::{EstimateEntry, TEstimate, TripSchedule};
@@ -28,7 +30,7 @@ pub enum StationRecord {
 }
 
 impl StationRecord {
-    fn nodes<'a>(&'a self, stations: &'a StationCollection) -> &'a [NodeKey] {
+    pub fn nodes<'a>(&'a self, stations: &'a StationCollection) -> &'a [NodeKey] {
         match *self {
             StationRecord::All(station_key) => {
                 stations.get(&station_key).map_or_default(|wfc| wfc.cache.nodes.as_slice())
@@ -36,7 +38,10 @@ impl StationRecord {
             StationRecord::Some(ref nodes) => nodes.as_slice(),
         }
     }
-    fn station_key<'a>(&'a self, node_collection: &'a NodeCollection) -> Option<&'a StationKey> {
+    pub fn station_key<'a>(
+        &'a self,
+        node_collection: &'a NodeCollection,
+    ) -> Option<&'a StationKey> {
         match self {
             StationRecord::All(station_key) => Some(station_key),
             StationRecord::Some(nodes) => {

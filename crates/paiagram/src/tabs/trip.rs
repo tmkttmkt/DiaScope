@@ -1,12 +1,9 @@
-use egui::{
-    Align2, AtomExt, Button, Color32, FontFamily, FontId, Layout, Popup, RectAlign, RichText, Ui,
-    Vec2, WidgetText, vec2,
-};
+use egui::*;
 use egui_i18n::tr;
 use paiagram_core::time::TimetableTime;
 use paiagram_core::trip::TravelMode::{self, At, Flexible, For};
-use paiagram_core::trip::{EstimateEntry, TEntry, TEstimate, TripSchedule};
-use paiagram_core::{Source, TripKey, WorldSnapshot};
+use paiagram_core::trip::{EstimateEntry, TEstimate, TripSchedule};
+use paiagram_core::{TripKey, WorldSnapshot};
 use serde::{Deserialize, Serialize};
 
 use super::Tab;

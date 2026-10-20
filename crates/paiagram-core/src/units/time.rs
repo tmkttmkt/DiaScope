@@ -195,7 +195,7 @@ impl TimetableTime {
     /// Parses the current time to a oud2 formatted string and drop the date
     /// offset.
     #[inline]
-    pub fn to_oud2_str(&self, show_seconds: bool) -> String {
+    pub fn to_oud2_string(&self, show_seconds: bool) -> String {
         let (h, m, s, _) = self.to_hmsd();
         if show_seconds {
             format!("{:2}{:02}{:02}", h, m, s)
