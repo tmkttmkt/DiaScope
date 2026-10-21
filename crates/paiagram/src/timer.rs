@@ -1,5 +1,5 @@
 use jiff::Zoned;
-use paiagram_core::time::{Tick, TimetableTime};
+use paiagram_core::time::TimetableTime;
 
 /// Token used to unlock the timer.
 pub(crate) struct TimerLockKey(());

@@ -344,6 +344,18 @@ fn main_display(tab: &mut DiagramTab, app: &mut App, ui: &mut Ui) {
     tab.callback.populate_uniforms(&tab.navi, response.rect);
     painter.add(tab.callback.clone().paint_callback(response.rect));
 
+    // current time overlay
+    {
+        let seconds = app.timer.seconds();
+        let mut x = tab.navi.logical_x_to_screen_x(Tick::from_seconds_f64(seconds));
+        let stroke = Stroke::new(2.0, Color32::RED);
+        stroke.round_center_to_pixel(ui.pixels_per_point(), &mut x);
+        painter.vline(x, response.rect.y_range(), stroke);
+        let range = Rangef::point(x).expand(5.0);
+        painter.hline(range, response.rect.bottom() - stroke.width / 2.0, stroke);
+        painter.hline(range, response.rect.top() + stroke.width / 2.0, stroke);
+    }
+
     // selected item overlay
     let animation_progress = ui.animate_bool_responsive(
         ui.scope_id().with("ui animation progress"),

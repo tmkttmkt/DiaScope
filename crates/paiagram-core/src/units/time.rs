@@ -18,6 +18,10 @@ impl Tick {
     pub fn from_timetable_time(time: TimetableTime) -> Self {
         Tick(time.0 as i64 * 100)
     }
+    pub fn from_seconds_f64(seconds: f64) -> Self {
+        let ticks = seconds * Self::TICKS_PER_SECOND as f64;
+        Self(ticks as i64)
+    }
     pub fn as_seconds_f64(self) -> f64 {
         let ticks_per_second = Self::from_timetable_time(TimetableTime(1)).0 as f64;
         self.0 as f64 / ticks_per_second
