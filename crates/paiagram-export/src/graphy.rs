@@ -52,6 +52,14 @@ pub struct ExportGraphy {
 }
 
 impl paiagram_rw::ExportObject for ExportGraphy {
+    fn filename(&self) -> String {
+        let extension = match self.format {
+            GraphyFormat::Pdf => ".pdf",
+            GraphyFormat::Svg => ".svg",
+            GraphyFormat::Png => ".png",
+        };
+        format!("exported{}", extension)
+    }
     fn write_content<W: io::Write>(&mut self, writer: &mut W) -> io::Result<()> {
         match self.format {
             GraphyFormat::Pdf => {
@@ -67,13 +75,6 @@ impl paiagram_rw::ExportObject for ExportGraphy {
             GraphyFormat::Svg | GraphyFormat::Png => {
                 todo!()
             }
-        }
-    }
-    fn extension(&self) -> impl AsRef<str> {
-        match self.format {
-            GraphyFormat::Pdf => ".pdf",
-            GraphyFormat::Svg => ".svg",
-            GraphyFormat::Png => ".png",
         }
     }
 }

@@ -98,7 +98,7 @@ impl Tab for ExtensionTab {
 
 fn main_display(tab: &mut ExtensionTab, app: &mut crate::App, ui: &mut Ui) {
     if let Ok(data) = tab.file_receiver.try_recv() {
-        data.write_to_file::<false>(Default::default());
+        data.write_to_file(Default::default());
     }
     ui.checkbox(&mut tab.edit_mode, "Edit mode");
     if tab.edit_mode {

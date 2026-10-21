@@ -111,7 +111,6 @@ pub struct JsRuntimeData {
 
 pub struct JsDataExporter {
     pub filename: String,
-    pub extension: String,
     pub content: String,
 }
 
@@ -119,11 +118,8 @@ impl paiagram_rw::ExportObject for JsDataExporter {
     fn write_content<W: std::io::Write>(&mut self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(self.content.as_bytes())
     }
-    fn extension(&self) -> impl AsRef<str> {
-        &self.extension
-    }
-    fn filename(&self) -> impl AsRef<str> {
-        &self.filename
+    fn filename(&self) -> String {
+        self.filename.clone()
     }
 }
 
@@ -174,13 +170,7 @@ impl JsRuntimeData {
         ctx.json_parse(json)
     }
     pub fn save_file(&mut self, filename: String, extension: String, content: String) {
-        self.file_sender
-            .send(JsDataExporter {
-                filename,
-                extension,
-                content,
-            })
-            .unwrap();
+        self.file_sender.send(JsDataExporter { filename, content }).unwrap();
     }
 }
 

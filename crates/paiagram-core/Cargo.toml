@@ -41,6 +41,7 @@ serde_json.workspace = true
 smallvec.workspace = true
 urlencoding.workspace = true
 web-time.workspace = true
+zrip.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 fastrand = { version = "2.4.1", features = ["js"] }

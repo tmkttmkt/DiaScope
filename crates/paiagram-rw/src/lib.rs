@@ -2,7 +2,7 @@ pub mod read;
 pub mod save;
 pub mod write;
 
-use std::io::{self, Write};
+use std::io::{self, Cursor, Seek, Write};
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -27,103 +27,60 @@ pub enum FileWriteState {
 /// How to export some data to another format.
 pub trait ExportObject: Sized + Send + 'static {
     /// Write content to a writer
-    fn write_content<W: Write>(&mut self, writer: &mut W) -> io::Result<()>;
-    /// The filename.
-    fn filename(&self) -> impl AsRef<str> {
-        "exported_file"
-    }
-    /// The extension including the proceding dot.
-    fn extension(&self) -> impl AsRef<str>;
+    fn write_content<W: Write + Seek>(&mut self, writer: &mut W) -> io::Result<()>;
+    /// The filename with extension.
+    fn filename(&self) -> String;
     /// Export contents and save them on disk, with optional parameters
-    fn write_to_file<const COMPRESS: bool>(mut self, state: Arc<Mutex<FileWriteState>>) {
-        let filename = {
-            let mut filename = String::new();
-            filename.push_str(self.filename().as_ref());
-            filename.push_str(self.extension().as_ref());
-            filename
+    fn write_to_file(mut self, state: Arc<Mutex<FileWriteState>>) {
+        let filename = self.filename();
+        *state.lock() = FileWriteState::Processing;
+
+        // Serialize into memory. The actual file IO differs between native and wasm.
+        let serialize = async move {
+            let mut writer = Cursor::new(Vec::<u8>::new());
+            let write_result = self.write_content(&mut writer);
+            (write_result, writer.into_inner())
         };
+
         #[cfg(target_arch = "wasm32")]
         {
             let (tx, rx) = futures_channel::oneshot::channel::<io::Result<Vec<u8>>>();
-
-            info!("Preparing to download `{}`", filename);
-            *state.lock() = FileWriteState::Processing;
-
-            // Serialize on the rayon thread pool and send the buffer back over a
-            // oneshot channel, so the DOM is only touched here on the main thread.
             rayon::spawn(move || {
-                let mut buffer = Vec::new();
-                let res = if COMPRESS {
-                    let mut writer = zrip::FrameEncoder::new(&mut buffer, 4).unwrap();
-                    let r = self.write_content(&mut writer);
-                    writer.finish().unwrap();
-                    r
-                } else {
-                    self.write_content(&mut buffer)
-                };
-                let _ = tx.send(res.map(|_| buffer));
+                let (write_result, buffer) = pollster::block_on(serialize);
+                let _ = tx.send(write_result.map(|()| buffer));
             });
-
             wasm_bindgen_futures::spawn_local(async move {
-                match rx.await {
-                    Ok(Ok(buffer)) => {
-                        let res = download_file(&filename, &buffer).map_err(|e| {
-                            io::Error::other(format!("Error while downloading file: {:?}", e))
-                        });
-                        *state.lock() = FileWriteState::Done(res);
-                    }
-                    Ok(Err(e)) => {
-                        warn!("Failed to serialize: {}", e);
-                        *state.lock() = FileWriteState::Done(io::Result::Err(e));
-                    }
-                    Err(_) => {
-                        warn!("Serialization task was dropped before sending a result");
-                        *state.lock() = FileWriteState::Done(Err(io::Error::other(
-                            "serialization task was cancelled",
-                        )));
-                    }
-                }
+                let result = match rx.await {
+                    Ok(Ok(buffer)) => download_file(&filename, &buffer).map_err(|e| {
+                        io::Error::other(format!("Error while downloading file: {e:?}"))
+                    }),
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => Err(io::Error::other("serialization task was cancelled")),
+                };
+                *state.lock() = FileWriteState::Done(result);
             });
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            rayon::spawn(move || {
-                let mut buffer = {
-                    let Some(path) = rfd::FileDialog::new()
-                        .set_file_name(filename.as_str())
-                        .add_filter("Exported", &[self.extension().as_ref()])
-                        .save_file()
+        rayon::spawn(move || {
+            let (write_result, buffer) = pollster::block_on(serialize);
+            let result = match write_result {
+                Ok(()) => {
+                    let Some(path) = rfd::FileDialog::new().set_file_name(&filename).save_file()
                     else {
+                        *state.lock() = FileWriteState::Idle;
                         return;
                     };
                     info!("Writing to file `{}`", path.display());
-                    match std::fs::File::create(path) {
-                        Ok(path) => path,
-                        Err(e) => {
-                            warn!("Failed to open file: {}", e);
-                            return;
-                        }
-                    }
-                };
-                *state.lock() = FileWriteState::Processing;
-                let res = if COMPRESS {
-                    let mut writer = zrip::FrameEncoder::new(&mut buffer, 4).unwrap();
-                    let r = self.write_content(&mut writer);
-                    writer.finish().unwrap();
-                    r
-                } else {
-                    self.write_content(&mut buffer)
-                };
-                if let Err(e) = res {
-                    warn!("Failed to serialize: {}", e);
-                    *state.lock() = FileWriteState::Done(io::Result::Err(e));
-                    return;
+                    std::fs::write(path, buffer)
                 }
-                info!("Successfully wrote `{}`", filename);
-                *state.lock() = FileWriteState::Done(Ok(()));
-            });
-        }
+                Err(e) => Err(e),
+            };
+            if let Err(ref e) = result {
+                warn!("Failed to write `{}`: {}", filename, e);
+            }
+            *state.lock() = FileWriteState::Done(result);
+        });
     }
 }
 

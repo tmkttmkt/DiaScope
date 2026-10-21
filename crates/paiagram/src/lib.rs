@@ -23,7 +23,7 @@ use log::info;
 use paiagram_core::import::ImportType;
 use paiagram_core::time::TimetableTime;
 use paiagram_core::{RouteKey, SaveFile, Source};
-use paiagram_export::ExportOuDia;
+use paiagram_export::{ExportGtfs, ExportOuDia};
 use paiagram_rw::{ExportObject, FileWriteState};
 use paiagram_selection::SelectedItems;
 use parking_lot::Mutex;
@@ -330,7 +330,7 @@ pub fn show_ui(
                 ui.separator();
                 if ui.button("Save .paia").clicked() {
                     let new_file: SaveFile = app.snap.clone().into();
-                    new_file.write_to_file::<true>(app.file_write_state.clone());
+                    new_file.write_to_file(app.file_write_state.clone());
                 }
                 ui.separator();
                 if ui.button("Export .oud").clicked() {
@@ -339,7 +339,13 @@ pub fn show_ui(
                         route: RouteKey::new(),
                         is_oudia_second: false,
                     }
-                    .write_to_file::<false>(app.file_write_state.clone());
+                    .write_to_file(app.file_write_state.clone());
+                }
+                if ui.button("Export GTFS").clicked() {
+                    ExportGtfs {
+                        snap: app.snap.clone(),
+                    }
+                    .write_to_file(app.file_write_state.clone());
                 }
             });
             Popup::menu(&ui.button(tr!("menu-about"))).show(|ui| {

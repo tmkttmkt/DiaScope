@@ -309,10 +309,11 @@ pub enum SaveFile {
 }
 
 impl ExportObject for SaveFile {
-    fn extension(&self) -> impl AsRef<str> {
-        ".paia"
+    fn filename(&self) -> String {
+        "exported.paia".into()
     }
     fn write_content<W: std::io::Write>(&mut self, writer: &mut W) -> std::io::Result<()> {
+        let writer = zrip::FrameEncoder::new(writer, 4).unwrap();
         cbor4ii::serde::to_writer(writer, &self).map_err(std::io::Error::other)
     }
 }

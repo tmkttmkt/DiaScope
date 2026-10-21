@@ -213,8 +213,8 @@ impl RouteTimetable {
 pub struct RouteTimetableExport(pub RouteTimetable, pub WorldSnapshot);
 
 impl ExportObject for RouteTimetableExport {
-    fn extension(&self) -> impl AsRef<str> {
-        ".csv"
+    fn filename(&self) -> String {
+        "exported.csv".into()
     }
     fn write_content<W: std::io::Write>(&mut self, writer: &mut W) -> std::io::Result<()> {
         let csv =

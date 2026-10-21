@@ -60,7 +60,7 @@ impl super::Tab for RouteTimetableTab {
             }
             if ui.button("Export .csv").clicked() {
                 RouteTimetableExport(self.cache.clone(), app.snap.clone())
-                    .write_to_file::<false>(Default::default());
+                    .write_to_file(Default::default());
             }
             ui.checkbox(&mut self.show_estimates, "Show estimates");
             ui.checkbox(&mut self.show_inbound, "Show Inbound");

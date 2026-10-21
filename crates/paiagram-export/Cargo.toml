@@ -12,7 +12,9 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+csv.workspace = true
 krilla.workspace = true
 paiagram-core.workspace = true
 paiagram-oudia.workspace = true
 paiagram-rw.workspace = true
+zip.workspace = true

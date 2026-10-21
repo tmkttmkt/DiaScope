@@ -192,7 +192,7 @@ impl Tab for DiagramTab {
                     format: GraphyFormat::Pdf,
                     fonts,
                 }
-                .write_to_file::<false>(app.file_write_state.clone());
+                .write_to_file(app.file_write_state.clone());
             }
         };
         Window::new("123")

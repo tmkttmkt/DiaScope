@@ -8,8 +8,8 @@ pub struct ExportOuDia {
 }
 
 impl paiagram_rw::ExportObject for ExportOuDia {
-    fn extension(&self) -> impl AsRef<str> {
-        ".oud"
+    fn filename(&self) -> String {
+        "exported.oud".into()
     }
     fn write_content<W: std::io::Write>(&mut self, writer: &mut W) -> std::io::Result<()> {
         let root = make_root(&self.world);
