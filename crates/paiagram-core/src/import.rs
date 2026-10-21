@@ -1,5 +1,5 @@
 //! # Import
-//! Handles foreign formats such as GTFS Static, qETRC/pyETRC, and OuDiaSecond.
+//! Handles foreign formats such as GTFS Schedule, qETRC/pyETRC, and OuDiaSecond.
 
 use std::io;
 
