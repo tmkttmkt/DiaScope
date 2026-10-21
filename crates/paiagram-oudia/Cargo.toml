@@ -19,7 +19,6 @@ paiagram-oudia-macros.workspace = true
 paste.workspace = true
 pest = "2.8.6"
 pest_consume = "1.1.3"
-pest_derive = "2.8.6"
 petgraph.workspace = true
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 smallvec.workspace = true
