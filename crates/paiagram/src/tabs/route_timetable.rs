@@ -6,6 +6,7 @@ use egui::scroll_area::{ScrollAreaOutput, ScrollBarVisibility};
 use egui::*;
 use either::Either;
 use itertools::{Itertools, chain, izip};
+use log::info;
 use paiagram_core::route::{
     RouteTimetable, RouteTimetableEntry, RouteTimetableExport, StationDisplayMode, StationRecord,
 };
@@ -98,21 +99,15 @@ impl super::Tab for RouteTimetableTab {
         });
 
         let station_records = if self.show_inbound {
-            let iter =
-                self.cache.station_records.iter().map(|(stn, inbound_mode, _)| (stn, inbound_mode));
+            let iter = self.cache.station_records.iter().map(|(r, mode, _)| (r, mode));
             Either::Left(iter)
         } else {
-            let iter = self
-                .cache
-                .station_records
-                .iter()
-                .rev()
-                .map(|(stn, _, outbound_mode)| (stn, outbound_mode));
+            let iter = self.cache.station_records.iter().rev().map(|(r, _, mode)| (r, mode));
             Either::Right(iter)
         };
 
         CentralPanel::no_frame().show(ui, |ui| {
-            self.scroll = show_grid(
+            let (scroll, paint_params) = show_grid(
                 self.show_estimates,
                 app,
                 ui,
@@ -121,13 +116,30 @@ impl super::Tab for RouteTimetableTab {
                 columns,
                 self.scroll,
             );
+            self.scroll = scroll;
+            if let Some((pos, record)) = paint_params {
+                let stroke = Stroke::new(2.0, Color32::RED);
+                ui.painter().vline(pos.x, ui.clip_rect().y_range(), stroke);
+                ui.painter().hline(ui.clip_rect().x_range(), pos.y, stroke);
+                let name = record
+                    .station_key(app.graph.nodes())
+                    .and_then(|key| app.stations.get(key))
+                    .map_or_default(|wfc| wfc.name.as_str());
+                ui.painter().text(
+                    pos,
+                    Align2::LEFT_BOTTOM,
+                    name,
+                    FontId::proportional(13.0),
+                    ui.visuals().text_color(),
+                );
+            }
         });
     }
 }
 
 /// Left panel: the station names and their per-row display modes.
-fn show_station_header<'a>(
-    app: &crate::App,
+fn show_station_header<'a, 'snap>(
+    app: &'snap crate::App,
     ui: &mut Ui,
     cell_size: Vec2,
     station_records: impl Iterator<Item = (&'a StationRecord, &'a mut StationDisplayMode)>,
@@ -190,7 +202,6 @@ fn show_station_header<'a>(
                     });
             }
         });
-
     Vec2 {
         x: scroll.x,
         y: scroll_area.state.clamped_offset().y,
@@ -279,7 +290,7 @@ fn show_grid<'a>(
     station_records: impl Iterator<Item = (&'a StationRecord, &'a StationDisplayMode)> + Clone,
     columns: &[(TripKey, EcoVec<RouteTimetableEntry>)],
     scroll: Vec2,
-) -> Vec2 {
+) -> (Vec2, Option<(Pos2, &'a StationRecord)>) {
     // window stroke for drawing strokes
     let stroke = ui.visuals().window_stroke;
 
@@ -290,7 +301,7 @@ fn show_grid<'a>(
         .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible);
 
     let row_count =
-        station_records.clone().map(|it| it.1.bits().count_ones().at_least(1) as usize).sum();
+        station_records.clone().map(|(_, it)| it.bits().count_ones().at_least(1) as usize).sum();
 
     let scroll_area = show_grid_viewport(
         scroll_area,
@@ -324,7 +335,8 @@ fn show_grid<'a>(
                 let y = rect.top() + (idx + 1) as f32 * cell_size.y;
                 ui.painter().hline(rect.x_range(), y, stroke);
             }
-            for (col_idx, (_, section)) in columns[col_range].iter().enumerate() {
+            let col_iter = columns[col_range].iter().enumerate();
+            col_iter.fold(None, |paint_pos, (col_idx, (_, section))| {
                 let left = rect.left() + col_idx as f32 * cell_size.x;
                 let entry_iter = izip!(
                     station_records.clone(),
@@ -334,10 +346,10 @@ fn show_grid<'a>(
                         iter::repeat(Either::Left(RouteTimetableEntry::NotInOperation)),
                     ),
                 )
-                .flat_map(|((_, display_mode), entry)| {
-                    display_mode.iter().map(move |disp_mode| (disp_mode, entry))
+                .flat_map(|((station_record, display_mode), entry)| {
+                    display_mode.iter().map(move |disp_mode| (station_record, disp_mode, entry))
                 })
-                .scan(None, |display_progress, (disp_mode, entry)| {
+                .scan(None, |disp_progress, (station_record, disp_mode, entry)| {
                     let ret = if disp_mode == StationDisplayMode::TRACK
                         && let Either::Left(RouteTimetableEntry::Active((_, entry))) = entry
                     {
@@ -351,7 +363,7 @@ fn show_grid<'a>(
                     } else {
                         let text_to_display = match entry {
                             Either::Left(RouteTimetableEntry::Active((es, entry))) => {
-                                *display_progress = Some(true);
+                                *disp_progress = Some(true);
                                 match [show_estimates, disp_mode == StationDisplayMode::ARRIVAL] {
                                     [true, true] => es.arr.to_oud2_string(false),
                                     [true, false] => es.dep.to_oud2_string(false),
@@ -359,12 +371,12 @@ fn show_grid<'a>(
                                     [false, false] => entry.to_oud2_string_dep(false),
                                 }
                             }
-                            Either::Right(()) if *display_progress == Some(true) => {
-                                *display_progress = Some(false);
+                            Either::Right(()) if *disp_progress == Some(true) => {
+                                *disp_progress = Some(false);
                                 "=====".into()
                             }
                             Either::Left(RouteTimetableEntry::NotInOperation) | _ => {
-                                if *display_progress == Some(true) {
+                                if *disp_progress == Some(true) {
                                     "||".into()
                                 } else {
                                     "..".into()
@@ -377,22 +389,31 @@ fn show_grid<'a>(
                         )
                         .atom_align(Align2::RIGHT_CENTER)
                     };
-                    Some(ret)
+                    Some((station_record, ret))
                 })
                 .skip(row_range.start)
                 .take(row_range.clone().count());
 
-                for (row_idx, atoms) in entry_iter.enumerate() {
-                    let top = rect.top() + row_idx as f32 * cell_size.y;
-                    let cell_rect = Rect::from_min_size(pos2(left, top), cell_size);
-                    ui.place(cell_rect, WidgetAtom::new(atoms));
-                }
                 // offset by one cell
                 ui.painter().vline(left + cell_size.x, rect.y_range(), stroke);
-            }
+
+                entry_iter.enumerate().fold(paint_pos, |paint_pos, (row, (stn_record, atoms))| {
+                    let top = rect.top() + row as f32 * cell_size.y;
+                    let cell_rect = Rect::from_min_size(pos2(left, top), cell_size);
+                    ui.place(cell_rect, WidgetAtom::new(atoms));
+                    if paint_pos.is_none()
+                        && let Some(p) = ui.input(|r| r.pointer.hover_pos())
+                        && cell_rect.contains(p)
+                    {
+                        Some((pos2(left + cell_size.x, top + cell_size.y), stn_record))
+                    } else {
+                        paint_pos
+                    }
+                })
+            })
         },
     );
-    scroll_area.state.clamped_offset()
+    (scroll_area.state.clamped_offset(), scroll_area.inner)
 }
 
 /// Like [`ScrollArea::show_viewport`], but specialized for a grid of uniformly-sized cells.
