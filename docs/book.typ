@@ -46,6 +46,7 @@
       chapter-path("panels/index"),
       chapter-path("panels/diagram"),
       chapter-path("panels/map"),
+      chapter-path("panels/route_timetable"),
       chapter-path("panels/station"),
     )),
     other(content: [= Importing], children: (
