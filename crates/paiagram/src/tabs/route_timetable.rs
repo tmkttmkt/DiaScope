@@ -247,6 +247,7 @@ fn show_trip_header(
                 ui.visuals_mut().widgets.inactive.weak_bg_fill = fill;
                 ui.visuals_mut().widgets.hovered.weak_bg_fill = fill.gamma_multiply(0.5);
                 ui.visuals_mut().widgets.active.weak_bg_fill = fill.gamma_multiply(0.25);
+                ui.spacing_mut().button_padding = Vec2::ZERO;
                 // ui.visuals_mut().widgets.inactive.bg_stroke;
                 ui.visuals_mut().widgets.hovered.bg_stroke = Stroke {
                     width: 1.0,
@@ -401,14 +402,11 @@ fn show_grid<'a>(
                     let top = rect.top() + row as f32 * cell_size.y;
                     let cell_rect = Rect::from_min_size(pos2(left, top), cell_size);
                     ui.place(cell_rect, WidgetAtom::new(atoms));
-                    if paint_pos.is_none()
-                        && let Some(p) = ui.input(|r| r.pointer.hover_pos())
-                        && cell_rect.contains(p)
-                    {
-                        Some((pos2(left + cell_size.x, top + cell_size.y), stn_record))
-                    } else {
-                        paint_pos
-                    }
+                    paint_pos.or_else(|| {
+                        ui.input(|r| r.pointer.hover_pos())
+                            .map_or(false, |pos| cell_rect.contains(pos))
+                            .then_some((pos2(left + cell_size.x, top + cell_size.y), stn_record))
+                    })
                 })
             })
         },
