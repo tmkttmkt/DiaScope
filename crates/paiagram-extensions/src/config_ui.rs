@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use egui::*;
-use rquickjs::{Ctx, Function, IntoJs, Object, Value};
+use rquickjs::{Ctx, IntoJs, Value};
 use serde::Deserialize;
 
 pub type ReturnVariableName = String;
@@ -51,17 +51,14 @@ pub enum ConfigUi {
 }
 
 impl ConfigUi {
-    /// Decodes a UI definition from a JavaScript value (an array of element objects) by
-    /// round-tripping it through `JSON.stringify` and `serde_json`. `undefined` yields no elements.
-    pub fn parse_many<'js>(ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Vec<ConfigUi>> {
-        let json_object: Object = ctx.globals().get("JSON")?;
-        let stringify: Function = json_object.get("stringify")?;
-        let json: Option<String> = stringify.call((value,))?;
-        let Some(json) = json else {
+    /// Decodes a UI definition from a JavaScript value (an array of element objects).
+    /// `undefined` yields no elements.
+    pub fn parse_many<'js>(_ctx: &Ctx<'js>, value: Value<'js>) -> rquickjs::Result<Vec<ConfigUi>> {
+        if value.is_undefined() {
             return Ok(Vec::new());
-        };
-        serde_json::from_str(&json).map_err(|err| {
-            rquickjs::Error::new_from_js_message("JSON", "ConfigUi", err.to_string())
+        }
+        rquickjs_serde::from_value(value).map_err(|err| {
+            rquickjs::Error::new_from_js_message("rquickjs-serde", "ConfigUi", err.to_string())
         })
     }
 

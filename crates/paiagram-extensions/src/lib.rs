@@ -126,67 +126,51 @@ impl paiagram_rw::ExportObject for JsDataExporter {
 #[rquickjs::methods(rename_all = "camelCase")]
 impl JsRuntimeData {
     pub fn selected_items<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
-        let mut value = serde_json::to_value(&self.selected_items).map_err(|err| {
-            rquickjs::Error::new_from_js_message("selected_items", "JSON", err.to_string())
-        })?;
-        stringify_integers(&mut value);
-        let json = serde_json::to_vec(&value).map_err(|err| {
-            rquickjs::Error::new_from_js_message("selected_items", "JSON", err.to_string())
-        })?;
-        ctx.json_parse(json)
+        rquickjs_serde::to_value(ctx, &self.selected_items).map_err(|err| {
+            rquickjs::Error::new_from_js_message(
+                "selected_items",
+                "rquickjs-serde",
+                err.to_string(),
+            )
+        })
     }
-    /// Returns every route key in the world as a decimal string. Accessible from scripts as
+    /// Returns every route key in the world. Accessible from scripts as
     /// `paiagram.world.routeInfo()`.
     pub fn route_info<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let keys: Vec<_> = self.snap.routes.keys().copied().collect();
-        let mut value = serde_json::to_value(&keys).map_err(|err| {
-            rquickjs::Error::new_from_js_message("route_info", "JSON", err.to_string())
-        })?;
-        stringify_integers(&mut value);
-        let json = serde_json::to_vec(&value).map_err(|err| {
-            rquickjs::Error::new_from_js_message("route_info", "JSON", err.to_string())
-        })?;
-        ctx.json_parse(json)
+        rquickjs_serde::to_value(ctx, keys).map_err(|err| {
+            rquickjs::Error::new_from_js_message("route_info", "rquickjs-serde", err.to_string())
+        })
     }
 
-    /// Returns the diagram lines of every trip, keyed by trip key (as a string). The cache is
-    /// derived, so it is rebuilt from the world on each call. Accessible from scripts as
-    /// `paiagram.world.diagramCache()`.
+    /// Returns a plain object mapping each trip key (as a decimal string) to its diagram lines.
+    /// The cache is derived, so it is rebuilt from the world on each call. Accessible from
+    /// scripts as `paiagram.world.diagramCache()`.
     pub fn diagram_cache<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
-        let mut caches = serde_json::Map::new();
+        let caches = Object::new(ctx.clone())?;
         for route in self.snap.routes.values() {
             let mut cache = DiagramCache::default();
             route.intervals.populate_trips(&self.snap, &mut cache);
             for (trip_key, polylines) in &cache.map {
-                let value = serde_json::to_value(polylines).map_err(|err| {
-                    rquickjs::Error::new_from_js_message("diagram_cache", "JSON", err.to_string())
+                let value = rquickjs_serde::to_value(ctx.clone(), polylines).map_err(|err| {
+                    rquickjs::Error::new_from_js_message(
+                        "diagram_cache",
+                        "rquickjs-serde",
+                        err.to_string(),
+                    )
                 })?;
-                caches.insert(trip_key.to_bits().to_string(), value);
+                caches.set(trip_key.to_bits().to_string(), value)?;
             }
         }
-        let json = serde_json::to_vec(&caches).map_err(|err| {
-            rquickjs::Error::new_from_js_message("diagram_cache", "JSON", err.to_string())
-        })?;
-        ctx.json_parse(json)
+        Ok(caches.into_value())
     }
     pub fn save_file(&mut self, filename: String, extension: String, content: String) {
-        self.file_sender.send(JsDataExporter { filename, content }).unwrap();
-    }
-}
-
-/// JS fucks numbers. Stringify those numbers instead.
-/// Use it with keys
-fn stringify_integers(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Number(number) => {
-            if number.is_u64() || number.is_i64() {
-                let text = number.to_string();
-                *value = serde_json::Value::String(text);
-            }
-        }
-        serde_json::Value::Array(items) => items.iter_mut().for_each(stringify_integers),
-        serde_json::Value::Object(map) => map.values_mut().for_each(stringify_integers),
-        _ => {}
+        self.file_sender
+            .send(JsDataExporter {
+                filename: format!("{filename}{extension}"),
+                content,
+            })
+            .unwrap();
     }
 }
 
@@ -232,4 +216,36 @@ fn install_console<'js>(ctx: &Ctx<'js>, paiagram: &Object<'js>) -> rquickjs::Res
     let console: Object = ctx.eval(CONSOLE_SHIM)?;
     paiagram.set("console", console)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use paiagram_core::TripKey;
+    use paiagram_selection::SelectedItem;
+    use rquickjs::{Array, BigInt, Context, Runtime, Value};
+
+    use super::*;
+
+    #[test]
+    fn selected_items_serialize_keys_exactly() {
+        // Allocate a key with nonzero counter bits so f64 precision loss would be visible.
+        let _ = TripKey::new();
+        let trip = TripKey::new();
+        let (file_sender, _file_receiver) = std::sync::mpsc::channel();
+        let data = JsRuntimeData {
+            snap: WorldSnapshot::default(),
+            selected_items: SelectedItem::Trip(trip).into(),
+            file_sender,
+        };
+
+        let runtime = Runtime::new().unwrap();
+        let context = Context::full(&runtime).unwrap();
+        context.with(|ctx| {
+            let value: Value = data.selected_items(ctx.clone()).unwrap();
+            let object = value.into_object().unwrap();
+            let trips: Array = object.get("Trips").unwrap();
+            let first: BigInt = trips.get(0).unwrap();
+            assert_eq!(first.to_i64().unwrap() as u64, trip.to_bits());
+        });
+    }
 }

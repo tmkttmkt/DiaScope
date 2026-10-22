@@ -32,8 +32,9 @@ function run() {
         );
         return;
     }
-    // `selectedItems()` emits the 64-bit key as a string, so it is exact.
-    const tripKey = String(selected.Trips[0]);
+    // `diagramCache()` is a plain object, so its keys are decimal strings. Property access
+    // coerces the BigInt key to that same string, so no conversion is needed here.
+    const tripKey = selected.Trips[0];
     const minutesPerCm = Number(paiagram.return_values.minutesPerCm) || 5;
 
     // Shape: { tripKey: [ [ [ {arr, dep}, entry, index, progress ], ... ], ... ] } — index directly.
