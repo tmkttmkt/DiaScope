@@ -4720,8 +4720,8 @@ dependencies = [
  "parking_lot",
  "rayon",
  "rquickjs",
+ "rquickjs-serde",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -5857,6 +5857,15 @@ dependencies = [
  "quote",
  "rquickjs-core",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "rquickjs-serde"
+version = "0.8.0"
+source = "git+https://github.com/wensimehrp/rquickjs-serde.git?branch=bigint#48b3f1d50bf9a6a3c45661675c028477f2d5206f"
+dependencies = [
+ "rquickjs",
+ "serde",
 ]
 
 [[package]]
