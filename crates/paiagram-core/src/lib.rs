@@ -6,6 +6,7 @@ pub mod colors;
 mod graph;
 pub mod import;
 mod interval;
+mod key_gen;
 mod make_type;
 pub mod problems;
 pub mod route;
@@ -15,11 +16,11 @@ pub mod units;
 mod world;
 use std::num::NonZeroU32;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::AtomicU16;
 
 use ecow::{EcoString, EcoVec};
 use egui::Color32;
 pub use graph::IntervalDirection;
+pub use key_gen::{MAX_CLIENT_ID, client_id, set_client_id};
 use make_type::make_type;
 use nohash_hasher::BuildNoHashHasher;
 use paiagram_rw::ExportObject;
@@ -35,12 +36,15 @@ pub trait Key: Clone + Copy {
     fn to_bits(self) -> u64;
     /// Return the creation time of the key
     fn creation_time(self) -> std::time::SystemTime {
-        let ms = self.to_bits() >> 16;
-        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ms)
+        crate::key_gen::creation_time(self.to_bits())
+    }
+    /// Return the id of the client that allocated the key
+    fn client(self) -> u8 {
+        crate::key_gen::client(self.to_bits())
     }
     /// Return the generation
     fn generation(self) -> u16 {
-        self.to_bits() as u16
+        crate::key_gen::generation(self.to_bits())
     }
 }
 

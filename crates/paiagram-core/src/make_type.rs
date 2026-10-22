@@ -38,25 +38,15 @@ macro_rules! make_type {
 
         impl nohash_hasher::IsEnabled for [<$struct_name Key>] {}
 
-        static [<$struct_name:snake:upper _COUNTER>]: AtomicU16 = AtomicU16::new(0);
+        static [<$struct_name:snake:upper _COUNTER>]: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
 
         impl [<$struct_name Key>] {
             pub fn new() -> Self {
-                use web_time::SystemTime;
-                let now_ms = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                let timestamp_48 = now_ms & 0xFFFF_FFFF_FFFF;
-                let counter_16 = [<$struct_name:snake:upper _COUNTER>]
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let mut raw_id = (timestamp_48 << 16) | (counter_16 as u64);
-                // I hope nobody would use this app and generate a key
-                // at exactly Jan 1, 1970 UTC+0...
-                if raw_id == 0 {
-                    raw_id = 1;
-                }
-                Self(std::num::NonZeroU64::new(raw_id).unwrap())
+                Self(crate::key_gen::next_id(
+                    &[<$struct_name:snake:upper _COUNTER>],
+                    crate::key_gen::client_id(),
+                ))
             }
         }
 
