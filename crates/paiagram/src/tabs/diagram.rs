@@ -1,3 +1,5 @@
+use std::iter;
+
 use egui::*;
 use paiagram_core::route::{DiagramCache, StationRecord};
 use paiagram_core::time::{Tick, TimetableTime};
@@ -443,18 +445,18 @@ fn select_trip_from_pos(
         };
         (p1 + t * diff - ptr_pos).length_sq() <= SELECT_RADIUS * SELECT_RADIUS
     };
-    for (trip_key, polyline) in
-        tab.cache.map.iter().flat_map(|(k, v)| std::iter::zip(std::iter::repeat(k), v))
-    {
-        for [curr, next] in polyline.array_windows::<2>() {
+
+    tab.cache
+        .map
+        .iter()
+        .flat_map(|(k, v)| v.iter().map(move |l| (k, l)))
+        .flat_map(|(k, l)| l.array_windows().map(move |w| (k, w)))
+        .find_map(|(key, [curr, next])| {
             let [curr_arr, curr_dep] = points(&curr.0, curr.2, curr.3);
             let [next_arr, next_dep] = points(&next.0, next.2, next.3);
             // The segments the drawing produces between two consecutive entries: the dwell at
             // the first, the travel between them, and the dwell at the second.
-            if hit(curr_arr, curr_dep) || hit(curr_dep, next_arr) || hit(next_arr, next_dep) {
-                return Some(*trip_key);
-            }
-        }
-    }
-    None
+            (hit(curr_arr, curr_dep) || hit(curr_dep, next_arr) || hit(next_arr, next_dep))
+                .then_some(*key)
+        })
 }
