@@ -12,7 +12,9 @@ use paiagram_selection::SelectedItems;
 use parking_lot::Mutex;
 use rayon::spawn;
 use rquickjs::class::Trace;
-use rquickjs::{CatchResultExt, Class, Context, Ctx, Function, JsLifetime, Object, Runtime, Value};
+use rquickjs::{
+    CatchResultExt, Class, Context, Ctx, Function, JsLifetime, Module, Object, Runtime, Value,
+};
 
 #[derive(Default, Debug)]
 pub enum RunningStatus<T> {
@@ -27,7 +29,8 @@ pub type ScriptRunningStatus = RunningStatus<Option<WorldSnapshot>>;
 
 static RQUICKJS_RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().unwrap());
 
-/// Evaluates the script and calls its `config_ui()` entrypoint.
+/// Evaluates the module and calls its exported `config_ui(world)` entrypoint. No [`JsIo`] is
+/// created for this pass, so the configuration UI cannot trigger side effects.
 pub fn eval_config(
     runtime_data: JsRuntimeData,
     status: Arc<Mutex<ConfigRunningStatus>>,
@@ -35,68 +38,88 @@ pub fn eval_config(
 ) {
     *status.lock() = ConfigRunningStatus::Running;
     spawn(move || {
-        let result = with_context(runtime_data, &script_str, |ctx| {
-            let entry: Function = ctx.globals().get("config_ui")?;
-            let value: Value = entry.call(())?;
-            ConfigUi::parse_many(ctx, value)
-        });
+        let result = with_context(
+            runtime_data,
+            None,
+            &script_str,
+            |ctx, module, world, _io| {
+                let entry: Function = module.get("config_ui")?;
+                let value: Value = entry.call((world,))?;
+                ConfigUi::parse_many(ctx, value)
+            },
+        );
         *status.lock() = ConfigRunningStatus::Finished(result);
     });
 }
 
-/// Runs the extension: evaluates the script and calls its `run()` entry point, returning the new
-/// world, if the script produced one. `return_values` holds the values collected from the config
-/// UI.
+/// Runs the extension: evaluates the module and calls its exported `run(world, params, io)` entry
+/// point, returning the new world if the script produced one. `params` holds the values collected
+/// from the config UI. `io` is only available to `run`, so `config_ui` cannot trigger side effects.
 pub fn run_script(
     runtime_data: JsRuntimeData,
+    io: JsIo,
     return_values: ReturnValueMap,
     status: Arc<Mutex<ScriptRunningStatus>>,
     script_str: Arc<str>,
 ) {
     *status.lock() = ScriptRunningStatus::Running;
     spawn(move || {
-        let result = with_context(runtime_data, &script_str, |ctx| {
-            let paiagram: Object = ctx.globals().get("paiagram")?;
-            // The script reads the config UI's values as `paiagram.return_values.foo`.
-            paiagram.set("return_values", return_values)?;
-            // `run()` is optional: a script that only performs side effects (such as exporting a
-            // file) doesn't have to define it, and then produces no new world.
-            let entry: Option<Function> = ctx.globals().get("run")?;
-            let Some(entry) = entry else {
-                return Ok(None);
-            };
-            entry.call::<_, ()>(())?;
-            let cls: Class<JsRuntimeData> = paiagram.get("world")?;
-            Ok(Some(std::mem::take(&mut cls.borrow_mut().snap)))
-        });
+        let result = with_context(
+            runtime_data,
+            Some(io),
+            &script_str,
+            |_ctx, module, world, io| {
+                // `run` is optional: a script that only performs side effects (such as exporting a
+                // file) doesn't have to export it, and then produces no new world.
+                let entry: Option<Function> = module.get("run")?;
+                let Some(entry) = entry else {
+                    return Ok(None);
+                };
+                let io = io.expect("run always receives io");
+                entry.call::<_, ()>((world.clone(), return_values, io))?;
+                Ok(Some(std::mem::take(&mut world.borrow_mut().snap)))
+            },
+        );
         *status.lock() = ScriptRunningStatus::Finished(result);
     });
 }
 
-/// Evaluates `script_str` in a fresh context with the `paiagram` namespace set up, then runs `f`.
+/// Evaluates `script_str` as an ES module in a fresh context, installs the global `console`, then
+/// runs `f` with the module, the `world` argument passed to both entry points, and the optional
+/// `io` argument passed only to `run`.
 fn with_context<T>(
     runtime_data: JsRuntimeData,
+    io: Option<JsIo>,
     script_str: &str,
-    f: impl FnOnce(&Ctx<'_>) -> rquickjs::Result<T>,
+    f: impl for<'js> FnOnce(
+        &Ctx<'js>,
+        Module<'js, rquickjs::module::Evaluated>,
+        Class<'js, JsRuntimeData>,
+        Option<Class<'js, JsIo>>,
+    ) -> rquickjs::Result<T>,
 ) -> rquickjs::Result<T> {
     let ctx = Context::full(&RQUICKJS_RUNTIME).unwrap();
     ctx.with(|ctx| {
-        let paiagram = Object::new(ctx.clone())?;
+        install_console(&ctx)?;
         let world = Class::instance(ctx.clone(), runtime_data)?;
-        paiagram.set("world", world)?;
+        let io = io.map(|io| Class::instance(ctx.clone(), io)).transpose()?;
 
-        install_console(&ctx, &paiagram)?;
-
-        ctx.globals().set("paiagram", paiagram)?;
-        ctx.eval::<(), _>(script_str).catch(&ctx).map_err(|err| {
+        let script_error = |err: rquickjs::CaughtError<'_>| {
             rquickjs::Error::new_from_js_message("script", "extension", err.to_string())
-        })?;
-        f(&ctx).catch(&ctx).map_err(|err| {
+        };
+        let module = Module::declare(ctx.clone(), "extension.js", script_str)
+            .catch(&ctx)
+            .map_err(script_error)?;
+        let (module, promise) = module.eval().catch(&ctx).map_err(script_error)?;
+        promise.finish::<()>().catch(&ctx).map_err(script_error)?;
+
+        f(&ctx, module, world, io).catch(&ctx).map_err(|err| {
             rquickjs::Error::new_from_js_message("entry point", "extension", err.to_string())
         })
     })
 }
 
+/// The read-only half of the extension API, exposed to both entry points as `world`.
 #[derive(Trace, JsLifetime)]
 #[rquickjs::class(rename_all = "camelCase")]
 pub struct JsRuntimeData {
@@ -104,6 +127,13 @@ pub struct JsRuntimeData {
     pub snap: WorldSnapshot,
     #[qjs(skip_trace)]
     pub selected_items: SelectedItems,
+}
+
+/// The side-effecting half of the extension API. It is passed to `run` as the third argument and
+/// is intentionally not part of the `world` object given to `config_ui`.
+#[derive(Trace, JsLifetime)]
+#[rquickjs::class(rename_all = "camelCase")]
+pub struct JsIo {
     // wasm only allows downloading files in the main thread
     #[qjs(skip_trace)]
     pub file_sender: Sender<JsDataExporter>,
@@ -134,8 +164,7 @@ impl JsRuntimeData {
             )
         })
     }
-    /// Returns every route key in the world. Accessible from scripts as
-    /// `paiagram.world.routeInfo()`.
+    /// Returns every route key in the world. Accessible from scripts as `world.routeInfo()`.
     pub fn route_info<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let keys: Vec<_> = self.snap.routes.keys().copied().collect();
         rquickjs_serde::to_value(ctx, keys).map_err(|err| {
@@ -145,7 +174,7 @@ impl JsRuntimeData {
 
     /// Returns a plain object mapping each trip key (as a decimal string) to its diagram lines.
     /// The cache is derived, so it is rebuilt from the world on each call. Accessible from
-    /// scripts as `paiagram.world.diagramCache()`.
+    /// scripts as `world.diagramCache()`.
     pub fn diagram_cache<'js>(&self, ctx: Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         let caches = Object::new(ctx.clone())?;
         for route in self.snap.routes.values() {
@@ -164,6 +193,11 @@ impl JsRuntimeData {
         }
         Ok(caches.into_value())
     }
+}
+
+#[rquickjs::methods(rename_all = "camelCase")]
+impl JsIo {
+    /// Request a file download from JS. Only available to `run` as `io.saveFile(...)`.
     pub fn save_file(&mut self, filename: String, extension: String, content: String) {
         self.file_sender
             .send(JsDataExporter {
@@ -174,10 +208,10 @@ impl JsRuntimeData {
     }
 }
 
-/// JavaScript factory for the `console` object. It returns the object, which the caller hangs on
-/// the `paiagram` namespace. `__log` is an internal bridge to the `log` crate.
+/// JavaScript factory for the global `console` object. It takes the Rust log bridge as a
+/// parameter, so no extra globals are needed.
 const CONSOLE_SHIM: &str = r#"
-(() => {
+((log) => {
     const fmt = (value) => {
         if (typeof value === "string") return value;
         if (value === null) return "null";
@@ -187,7 +221,6 @@ const CONSOLE_SHIM: &str = r#"
         }
         return String(value);
     };
-    const log = globalThis.__log;
     const make = (level) => (...args) => log(level, args.map(fmt).join(" "));
     return {
         log: make(1),
@@ -197,11 +230,11 @@ const CONSOLE_SHIM: &str = r#"
         error: make(4),
         trace: make(5),
     };
-})();
+})
 "#;
 
-/// Installs `paiagram.console`, whose methods forward to the `log` crate.
-fn install_console<'js>(ctx: &Ctx<'js>, paiagram: &Object<'js>) -> rquickjs::Result<()> {
+/// Installs the standard `console` global, whose methods forward to the `log` crate.
+fn install_console<'js>(ctx: &Ctx<'js>) -> rquickjs::Result<()> {
     let log_fn = Function::new(ctx.clone(), |level: u32, message: String| {
         let level = match level {
             2 => log::Level::Debug,
@@ -212,9 +245,9 @@ fn install_console<'js>(ctx: &Ctx<'js>, paiagram: &Object<'js>) -> rquickjs::Res
         };
         log::log!(target: "script", level, "{message}");
     })?;
-    ctx.globals().set("__log", log_fn)?;
-    let console: Object = ctx.eval(CONSOLE_SHIM)?;
-    paiagram.set("console", console)?;
+    let factory: Function = ctx.eval(CONSOLE_SHIM)?;
+    let console: Object = factory.call((log_fn,))?;
+    ctx.globals().set("console", console)?;
     Ok(())
 }
 
@@ -231,11 +264,9 @@ mod tests {
         // Allocate a key with nonzero counter bits so f64 precision loss would be visible.
         let _ = TripKey::new();
         let trip = TripKey::new();
-        let (file_sender, _file_receiver) = std::sync::mpsc::channel();
         let data = JsRuntimeData {
             snap: WorldSnapshot::default(),
             selected_items: SelectedItem::Trip(trip).into(),
-            file_sender,
         };
 
         let runtime = Runtime::new().unwrap();

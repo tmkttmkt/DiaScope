@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-function config_ui() {
+export function config_ui(world) {
     return [
         {
             type: "text",
@@ -22,12 +22,12 @@ function config_ui() {
     ];
 }
 
-function run() {
-    const selected = paiagram.world.selectedItems();
+export function run(world, params, io) {
+    const selected = world.selectedItems();
 
     // A focused trip serializes as `{ Trips: [tripKey] }` (SelectedItems::Trips).
     if (!selected || !selected.Trips || selected.Trips.length === 0) {
-        paiagram.console.warn(
+        console.warn(
             "Focus a trip first — the current selection is not a trip",
         );
         return;
@@ -35,20 +35,18 @@ function run() {
     // `diagramCache()` is a plain object, so its keys are decimal strings. Property access
     // coerces the BigInt key to that same string, so no conversion is needed here.
     const tripKey = selected.Trips[0];
-    const minutesPerCm = Number(paiagram.return_values.minutesPerCm) || 5;
+    const minutesPerCm = Number(params.minutesPerCm) || 5;
 
     // Shape: { tripKey: [ [ [ {arr, dep}, entry, index, progress ], ... ], ... ] } — index directly.
-    const polylines = paiagram.world.diagramCache()[tripKey];
+    const polylines = world.diagramCache()[tripKey];
     if (!polylines || polylines.length === 0) {
-        paiagram.console.warn(
-            `Trip ${tripKey} has no diagram lines in the cache`,
-        );
+        console.warn(`Trip ${tripKey} has no diagram lines in the cache`);
         return;
     }
 
     const svg = diagramToSvg(polylines, tripKey, minutesPerCm);
-    paiagram.world.saveFile("focused_trip_diagram", ".svg", svg);
-    paiagram.console.info(
+    io.saveFile("focused_trip_diagram", ".svg", svg);
+    console.info(
         `Exported ${polylines.length} line(s) for trip ${tripKey} (${minutesPerCm} min/cm)`,
     );
 }

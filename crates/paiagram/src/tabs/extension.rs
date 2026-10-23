@@ -6,7 +6,7 @@ use paiagram_extensions::config_ui::{
     ConfigUi, ConfigUiList, ReturnValueMap, default_return_values,
 };
 use paiagram_extensions::{
-    ConfigRunningStatus, JsDataExporter, JsRuntimeData, ScriptRunningStatus, eval_config,
+    ConfigRunningStatus, JsDataExporter, JsIo, JsRuntimeData, ScriptRunningStatus, eval_config,
     run_script,
 };
 use paiagram_rw::ExportObject;
@@ -43,7 +43,8 @@ impl Default for ExtensionTab {
     fn default() -> Self {
         let (file_sender, file_receiver) = channel();
         Self {
-            script_text: include_str!("../../../paiagram-extensions/scripts/ui_sample.js").into(),
+            script_text: include_str!("../../../paiagram-extensions/scripts/export_focused.js")
+                .into(),
             file_receiver,
             file_sender,
             edit_mode: false,
@@ -136,7 +137,6 @@ fn main_display(tab: &mut ExtensionTab, app: &mut crate::App, ui: &mut Ui) {
                 JsRuntimeData {
                     snap: app.snap.clone(),
                     selected_items: app.selected_items.clone(),
-                    file_sender: tab.file_sender.clone(),
                 },
                 tab.config_running_status.clone(),
                 tab.script_text.as_str().into(),
@@ -147,6 +147,8 @@ fn main_display(tab: &mut ExtensionTab, app: &mut crate::App, ui: &mut Ui) {
                 JsRuntimeData {
                     snap: app.snap.clone(),
                     selected_items: app.selected_items.clone(),
+                },
+                JsIo {
                     file_sender: tab.file_sender.clone(),
                 },
                 tab.return_value_map.clone(),

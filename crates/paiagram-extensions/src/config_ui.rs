@@ -117,8 +117,6 @@ pub enum ConfigUiReturnValue {
 }
 
 impl<'js> IntoJs<'js> for ConfigUiReturnValue {
-    /// Unwraps the enum so scripts read `paiagram.return_values.foo` directly (a number, string,
-    /// boolean, or nested object) instead of `paiagram.return_values.foo.number`.
     fn into_js(self, ctx: &Ctx<'js>) -> rquickjs::Result<Value<'js>> {
         match self {
             Self::String(value) => value.into_js(ctx),

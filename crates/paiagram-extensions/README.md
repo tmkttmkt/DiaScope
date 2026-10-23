@@ -4,20 +4,22 @@ Extensions add extra features to Paiagram.
 
 ## Languages
 
-You can write extensions in [JavaScript](https://en.wikipedia.org/wiki/JavaScript), or any other language compiled to
+You can write extensions in [JavaScript](https://en.wikipedia.org/wiki/JavaScript) (plus any
+languages transpiled to JavaScript), or any other language compiled to
 [WebAssembly](https://en.wikipedia.org/wiki/WebAssembly).
 
 ## JavaScript
 
-An extension defines two entry points:
+Extensions are ES modules. An extension may export two entry points:
 
-- `config_ui()` declares the configuration UI, returning an array of elements for the host to
-  render. It is evaluated when the extension's panel is opened and never commits world changes.
-- `run()` is executed when the user runs the extension. It reads the values collected from the UI
-  as `paiagram.return_values.<name>` and manipulates the world.
-
-The host exposes its API on the `paiagram` global: `paiagram.world` is the current world and
-`paiagram.console` forwards to the host log.
+- `export function config_ui(world)` declares the configuration UI, returning an array of elements
+  for the host to render. It is evaluated when the extension's panel is opened and never commits
+  world changes. This function may not produce any side effects other than printing to the console.
+- `export function run(world, params, io)` is executed when the user runs the extension. `params`
+  holds the values collected from the configuration UI, and `world` exposes the read-only world API
+  (for example `world.selectedItems()` and `world.diagramCache()`). `io` exposes side-effecting
+  operations such as `io.saveFile(...)`, which triggers a file download. It is only passed to
+  `run`, so `config_ui` cannot trigger side effects.
 
 The program will automatically calculate the difference between the new world and the existing
 world, and merge the results.
