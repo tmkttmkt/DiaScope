@@ -1,44 +1,86 @@
-<div align="center">
-  <img src="./paiagram.svg">
-</div>
+# DiaScope
 
-# Development is on another branch! This project is not dead!
+**現行ダイヤと、これから作るダイヤを眺めるための鉄道ダイヤ閲覧・調整アプリ。**
 
-# Paiagram
+[Paiagram](https://github.com/wensimehrp/Paiagram)を基にしたフォークである。
+OpenTTDの鉄道運行を題材に、ダイヤグラム・時刻表・2D路線図を行き来しながら、
+列車の動きや運転間隔を確認できる環境を目指している。
 
-[![Workflow Status](https://github.com/WenSimEHRP/Paiagram/actions/workflows/nightly.yml/badge.svg)](https://github.com/WenSimEHRP/Paiagram/actions/workflows/nightly.yml)
-[![Workflow Status](https://github.com/WenSimEHRP/Paiagram/actions/workflows/docs.yml/badge.svg)](https://github.com/WenSimEHRP/Paiagram/actions/workflows/docs.yml)
-![GitHub License](https://img.shields.io/github/license/wensimehrp/paiagram)
-[![Website](https://img.shields.io/website?url=https%3A%2F%2Fpaiagram.com&up_message=Try%20it%20online!&down_message=Service%20down&logo=github&label=Web%20build)](https://paiagram.com)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/WenSimEHRP/Paiagram)
+## 何に使うか
 
----
+主な用途は、ダイヤを眺めて運行の流れを把握することである。
 
-![A fictional railway network featuring mixed services](https://github.com/user-attachments/assets/3819f7b5-c33c-4e71-90a4-d61d8a4bb93b)
+- 現在のダイヤで、列車の間隔・停車時間・待機の偏りを確認する
+- 作成した将来ダイヤを比較し、時刻や本数を最終調整する
+- 路線図上の列車位置と、ダイヤグラム上の時刻を対応させる
+- 駅間距離や駅構造を踏まえた簡易検証につなげる
 
-_A fictional railway network featuring mixed services_
+2D表示では地形の再現より、駅と線路のつながりを重視する。
+OpenTTD由来の地理データには、セーブデータから得た実座標・駅間隔を利用する方針である。
 
----
+## 現在の状態
 
-[![The Chinese Railway network](https://github.com/user-attachments/assets/1b53f533-ec6e-4183-b7d1-fbf471545318)](https://paiagram.com/0.1.1/?open=example.paia)
+開発中であり、完成したOpenTTD用ダイヤエディターではない。
 
-[_The Chinese Railway network_](https://paiagram.com/0.1.1/?open=example.paia)
+| 項目 | 状態 |
+| --- | --- |
+| ダイヤグラム・時刻表・路線図の表示と編集 | Paiagramから継承 |
+| 路線図上での列車の動きの再生 | Paiagramから継承 |
+| OuDia / OuDiaSecond / qETRC・pyETRC / GTFSなどの読み込み | Paiagramから継承 |
+| 日本語UI | ローカル開発版で実装・ビルド・翻訳テスト済み。コードはまだGitHub未反映 |
+| DiaS.jsonの読み込み | 未実装 |
+| OpenTTDのsavの直接読み込み | 未実装 |
+| 線路占有・信号・ホーム競合の検証 | 今後の開発対象 |
 
----
+元プロジェクトにも未実装の操作がある。
+入力データの駅名や列車名を自動翻訳する機能はない。
 
-> [!WARNING]
-> Paiagram is still in development. Don't expect it to be ready for production use right now.
-> Come back by late 2026 to see how it is going. I guarantee you that there would be lots of new commits.
+## DiaS.jsonとの連携方針
 
-Paiagram is a marey chart editor and timetable visualizer that runs on any modern potatoes. I've verified this on my high school's desktops.
+DiaS.jsonは、ダイヤと地理を一緒に扱うために別途設計している形式である。
 
-## Features
+- ダイヤ側：列車、編成、到着・発車時刻、運用、待機
+- 地理側：駅、線路、分岐、ホーム、車庫、信号
+- 必要に応じて、元の指令・条件分岐・発車設定も保持する
+- 計算済みダイヤと、未確定の経路や接続を区別して保存する
 
-- A graph for organizing your stations and intervals. The graph is also the sole truth for station connectivity.
-- Create diagrams from arbitrary nodes -- the program handles it, don't worry. Your vehicle data is not tied to the diagram.
-- Translations! You can use the app in Klingon if you wish to -- you'd need to translate it first, obviously.
-- Import your favourite OuDiaSecond and qETRC/pyETRC diagrams using the builtin import feature.
-- Try it on the web! You can download the app bundle and use it directly in your browser without installation. It works completely offline!
-  There's also an online build: <https://paiagram.com>
+savからDiaS.jsonへの変換器は別の作業リポジトリで実装しており、
+**このリポジトリにはまだ含まれていない。**
+DiaScope側の読み込み機能を追加してから、閲覧・調整に利用する予定である。
 
-[![Translation status](https://hosted.weblate.org/widget/paiagram/paiagram-app/multi-auto.svg)](https://hosted.weblate.org/engage/paiagram/)
+## Windowsでの起動
+
+ソースからのビルドにはRust 1.95.0とWindows用C++ビルド環境が必要である。
+
+```powershell
+git clone https://github.com/tmkttmkt/DiaScope.git
+cd DiaScope
+cargo +1.95.0 build --locked --bin paiagram
+.\target\debug\paiagram.exe
+```
+
+初回ビルド前にフォントの配置が必要である。
+`Justfile` の `get-fonts` に記載された公式配布元から、
+Sarasa UI SCとDiaProを取得し、`crates/paiagram-ui/assets/fonts` に展開する。
+フォントを再配布する場合は、それぞれのライセンスも同梱する。
+
+ローカルの日本語開発版では `start-diascope.cmd` をダブルクリックすると日本語で起動する。
+このランチャーと日本語化コードは、README更新時点ではGitHub未反映である。
+
+## 開発の進め方
+
+当面は以下の順に進める。
+
+1. 日本語UIを整え、基本操作を分かりやすくする
+2. DiaS.jsonを読み込み、ダイヤグラムと2D路線図に表示する
+3. 保存された現行ダイヤと、作成した将来ダイヤを扱えるようにする
+4. 時刻・接続・運用などの簡易検証と最終調整を追加する
+
+構成の詳細は [ARCHITECTURE.md](ARCHITECTURE.md) を参照する。
+クレート名・コードの識別子・既存の保存形式には、元の `paiagram` という名称を維持している。
+
+## 元プロジェクトとライセンス
+
+元プロジェクトは [wensimehrp/Paiagram](https://github.com/wensimehrp/Paiagram) である。
+元プロジェクトの著作権表示と [MPL-2.0ライセンス](LICENSE.md) を維持する。
+付属フォントや依存ライブラリには個別のライセンスが適用される。

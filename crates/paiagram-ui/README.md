@@ -1,3 +1,7 @@
-# Paiagram-UI
+# DiaScope UI
 
-UI components for Paiagram.
+DiaScopeの画面表示と操作を担当するクレートである。
+ダイヤグラム、路線時刻表、2D路線図、設定画面などを含む。
+元プロジェクトとの互換性のため、クレート名は paiagram-ui を維持している。
+
+アプリ全体の目的と起動手順は、[ルートのREADME](../../README.md)を参照する。

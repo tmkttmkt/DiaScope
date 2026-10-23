@@ -1,3 +1,8 @@
-# Paiagram-SOAP
+# Paiagram SOAP
 
-A Rust SOAP implementation based on petgraph.
+petgraphを利用した、Rust製のグラフ配置処理を含む開発中のクレートである。
+ノードのXY座標を扱うインターフェースと配置計算用の関数を持つ。
+元プロジェクト由来のクレート名を維持している。
+
+アプリ全体の説明は[ルートのREADME](../../README.md)を参照する。
+このクレートのライセンスは、Cargo.tomlに指定された MIT OR Apache-2.0 である。
