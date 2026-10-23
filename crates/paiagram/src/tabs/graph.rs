@@ -20,15 +20,14 @@ mod graph_intervals {
 mod graph_nodes {
     include!(concat!(env!("OUT_DIR"), "/graph_nodes.rs"));
 }
-mod trip_icons {
-    include!(concat!(env!("OUT_DIR"), "/trip_icons.rs"));
-}
 
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct GraphTab {
     #[serde(skip)]
     tiles: Option<HttpTiles>,
+    #[serde(skip)]
+    trip_icon: Option<TextureHandle>,
     map_memory: MapMemory,
 }
 
@@ -36,6 +35,7 @@ impl Default for GraphTab {
     fn default() -> Self {
         Self {
             tiles: None,
+            trip_icon: None,
             map_memory: MapMemory::default(),
         }
     }
@@ -70,8 +70,11 @@ impl Tab for GraphTab {
     }
 }
 
+const ICON_HALF_SIZE: f32 = 18.0;
+
 struct MapPlugin<'a> {
     app: &'a mut App,
+    trip_icon: TextureId,
 }
 
 impl<'a> walkers::Plugin for MapPlugin<'a> {
@@ -104,8 +107,7 @@ impl<'a> walkers::Plugin for MapPlugin<'a> {
             None
         };
 
-        const SELECTION_THRESHOLD_SQUARE: f32 =
-            trip_icons::trip_icons::ICON_HALF_SIZE * trip_icons::trip_icons::ICON_HALF_SIZE;
+        const SELECTION_THRESHOLD_SQUARE: f32 = ICON_HALF_SIZE * ICON_HALF_SIZE;
 
         let lon_lat_to_pos = |coor: LonLat| {
             let wgs84_lon_lat: Wgs84LonLat = coor.into();
@@ -164,10 +166,6 @@ impl<'a> walkers::Plugin for MapPlugin<'a> {
                     SelectedItems::Trips(selected_trips) if selected_trips.contains(&leg.trip_key)
                 ),
             ));
-            callback.trip_icons.push(trip_icons::trip_icons::TripIcon::new(
-                0,
-                (trip_pos - response.rect.left_top()).into(),
-            ));
             if let Some(interact_pos) = interact_pos
                 && (interact_pos - trip_pos).length_sq() <= SELECTION_THRESHOLD_SQUARE
             {
@@ -216,8 +214,14 @@ impl<'a> walkers::Plugin for MapPlugin<'a> {
         }
 
         for (pos, text, fill, is_selected) in trip_leg_text {
+            ui.painter().image(
+                self.trip_icon,
+                Rect::from_center_size(pos, Vec2::splat(ICON_HALF_SIZE * 2.0)),
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
             ui.painter().text(
-                pos + Vec2::new(0.0, -trip_icons::trip_icons::ICON_HALF_SIZE),
+                pos + Vec2::new(0.0, -ICON_HALF_SIZE),
                 Align2::CENTER_BOTTOM,
                 text,
                 FontId::proportional(13.0),
@@ -226,7 +230,7 @@ impl<'a> walkers::Plugin for MapPlugin<'a> {
             if is_selected {
                 ui.painter().circle(
                     pos,
-                    trip_icons::trip_icons::ICON_HALF_SIZE + 6.0,
+                    ICON_HALF_SIZE + 6.0,
                     Color32::RED.gamma_multiply(0.5),
                     Stroke::new(1.0, Color32::RED),
                 );
@@ -276,6 +280,7 @@ fn auto_layout(app: &mut App) {
 }
 
 fn main_display(tab: &mut GraphTab, app: &mut App, ui: &mut Ui) {
+    let trip_icon = tab.trip_icon.get_or_insert_with(|| load_trip_icon(ui.ctx())).id();
     let map = Map::new(
         match tab.tiles.as_mut() {
             // map::new wants dyn, thus rebind
@@ -285,6 +290,25 @@ fn main_display(tab: &mut GraphTab, app: &mut App, ui: &mut Ui) {
         &mut tab.map_memory,
         lon_lat(0.0, 0.0),
     )
-    .with_plugin(MapPlugin { app });
+    .with_plugin(MapPlugin { app, trip_icon });
     ui.add(map);
+}
+
+/// Decodes the embedded trip icon and uploads it as an egui texture. Every trip uses the same
+/// texture, so egui batches all icon quads into one draw call.
+fn load_trip_icon(ctx: &egui::Context) -> TextureHandle {
+    let decoded = image::load_from_memory(include_bytes!("../../assets/raicho_485.png"))
+        .expect("the embedded trip icon must be a valid PNG")
+        .into_rgba8();
+
+    // The icon is drawn from one square quad, so pad it with transparent pixels instead of
+    // stretching it. This preserves the original aspect ratio.
+    let side = decoded.width().max(decoded.height());
+    let mut rgba = image::RgbaImage::new(side, side);
+    let x = i64::from((side - decoded.width()) / 2);
+    let y = i64::from((side - decoded.height()) / 2);
+    image::imageops::overlay(&mut rgba, &decoded, x, y);
+
+    let image = ColorImage::from_rgba_unmultiplied([side as usize, side as usize], rgba.as_raw());
+    ctx.load_texture("graph_trip_icon", image, TextureOptions::LINEAR)
 }

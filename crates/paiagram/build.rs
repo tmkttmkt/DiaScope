@@ -20,7 +20,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "graph_intervals",
     )?;
     generate_bindings(&out_dir, "package::graph::graph_nodes", "graph_nodes")?;
-    generate_bindings(&out_dir, "package::graph::trip_icons", "trip_icons")?;
 
     Ok(())
 }
